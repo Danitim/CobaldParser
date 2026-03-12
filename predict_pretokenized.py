@@ -85,14 +85,16 @@ if __name__ == "__main__":
         trust_remote_code=True
     )
 
-    # Pass one sentence at a time
-    # TODO: add batching for speedup
-    outputs = []
+    batch_size = 64
+    sentences = []
     for tokens in parse_conllu_to_token_lists(args.input):
         assert token_delimiter not in tokens
-        sentence = token_delimiter.join(tokens)
-        output = pipe(sentence, output_format='str')
-        outputs.append(output)
+        sentences.append(token_delimiter.join(tokens))
+
+    outputs = []
+    for i in range(0, len(sentences), batch_size):
+        batch_sentences = sentences[i:i + batch_size]
+        outputs.extend(pipe(batch_sentences, output_format='str', batch_size=batch_size))
 
     with open(args.output, 'w') as f:
         f.write('\n\n'.join(outputs))
