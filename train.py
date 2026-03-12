@@ -184,11 +184,24 @@ if __name__ == "__main__":
         "Example: `CoBaLD/enhanced-cobald:en,CoBaLD/enhanced-ud-syntax:default`."
     )
     parser.add_argument('--finetune_from')
+    parser.add_argument(
+        '--columns',
+        nargs='+',
+        help="CoNLL-U columns to keep for training (e.g. upos feats head deprel). "
+        "Columns 'id' and 'word' are always kept."
+    )
 
     # Parse command-line arguments.
     training_args, custom_args = parser.parse_args_into_dataclasses()
 
     target_dataset_dict = load_conllu_folder(custom_args.data_dir)
+
+    # Remove columns not requested by the user.
+    if custom_args.columns:
+        keep = {"id", "word", "sent_id", "text"} | set(custom_args.columns)
+        drop = [c for c in target_dataset_dict["train"].column_names if c not in keep]
+        if drop:
+            target_dataset_dict = target_dataset_dict.remove_columns(drop)
     target_dataset_dict = transform_dataset(target_dataset_dict)
 
     # Build tagsets from the local dataset.

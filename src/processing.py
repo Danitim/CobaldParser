@@ -107,13 +107,17 @@ def transform_fields(sentence: dict) -> dict:
         ]
     
     if UPOS in sentence or XPOS in sentence or FEATS in sentence:
+        n_tokens = len(sentence[WORD])
+        upos_list = sentence.get(UPOS, [None] * n_tokens)
+        xpos_list = sentence.get(XPOS, [None] * n_tokens)
+        feats_list = sentence.get(FEATS, [None] * n_tokens)
         result[JOINT_FEATS] = [
             f"{upos or '_'}#{xpos or '_'}#{feats or '_'}"
             if (upos is not None or xpos is not None or feats is not None) else None
             for upos, xpos, feats in zip(
-                sentence[UPOS],
-                sentence[XPOS],
-                sentence[FEATS],
+                upos_list,
+                xpos_list,
+                feats_list,
                 strict=True
             )
         ]
