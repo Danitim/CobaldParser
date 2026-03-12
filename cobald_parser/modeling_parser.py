@@ -56,8 +56,8 @@ class CobaldParser(PreTrainedModel):
             self.classifiers["syntax"] = DependencyClassifier(
                 input_size=embedding_size,
                 hidden_size=config.dependency_classifier_hidden_size,
-                n_rels_ud=len(config.vocabulary["ud_deprel"]),
-                n_rels_eud=len(config.vocabulary["eud_deprel"]),
+                n_rels_ud=len(config.vocabulary.get("ud_deprel", {})),
+                n_rels_eud=len(config.vocabulary.get("eud_deprel", {})),
                 activation=config.activation,
                 dropout=config.dropout
             )
@@ -147,9 +147,12 @@ class CobaldParser(PreTrainedModel):
                 null_mask,
                 padding_mask
             )
-            output["deps_ud"] = deps_output['preds_ud']
-            output["deps_eud"] = deps_output['preds_eud']
-            output["loss"] += deps_output['loss_ud'] + deps_output['loss_eud']
+            if 'preds_ud' in deps_output:
+                output["deps_ud"] = deps_output['preds_ud']
+                output["loss"] += deps_output['loss_ud']
+            if 'preds_eud' in deps_output:
+                output["deps_eud"] = deps_output['preds_eud']
+                output["loss"] += deps_output['loss_eud']
 
         # Predict miscellaneous features.
         if "misc" in self.classifiers:

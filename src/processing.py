@@ -149,27 +149,26 @@ def transform_fields(sentence: dict) -> dict:
         result[UD_DEPREL] = ud_deprels
 
     # Enhanced syntax.
-    if DEPS in sentence:
-        eud_arcs_from, eud_arcs_to, eud_deprels = zip(
-            *[
-                (
-                    # Same.
-                    id2idx[head_id] if head_id != ROOT_HEAD else id2idx[token_id],
-                    id2idx[token_id],
-                    deprel
-                )
-                for token_id, deps in zip(
-                    sentence[ID],
-                    sentence[DEPS],
-                    strict=True
-                )
-                for head_id, deprel in json.loads(deps).items()
-                if deps is not None
-            ]
-        )
-        result[EUD_ARC_FROM] = eud_arcs_from
-        result[EUD_ARC_TO] = eud_arcs_to
-        result[EUD_DEPREL] = eud_deprels
+    if DEPS in sentence and any(d is not None for d in sentence[DEPS]):
+        eud_triples = [
+            (
+                id2idx[head_id] if head_id != ROOT_HEAD else id2idx[token_id],
+                id2idx[token_id],
+                deprel
+            )
+            for token_id, deps in zip(
+                sentence[ID],
+                sentence[DEPS],
+                strict=True
+            )
+            if deps is not None
+            for head_id, deprel in json.loads(deps).items()
+        ]
+        if eud_triples:
+            eud_arcs_from, eud_arcs_to, eud_deprels = zip(*eud_triples)
+            result[EUD_ARC_FROM] = eud_arcs_from
+            result[EUD_ARC_TO] = eud_arcs_to
+            result[EUD_DEPREL] = eud_deprels
 
     return result
 

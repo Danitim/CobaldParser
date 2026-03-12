@@ -258,8 +258,8 @@ class DependencyClassifier(nn.Module):
         self.rel_dep_mlp = deepcopy(self.arc_dep_mlp)
         self.rel_head_mlp = deepcopy(self.arc_dep_mlp)
 
-        self.dependency_head_ud = DependencyHead(hidden_size, n_rels_ud)
-        self.dependency_head_eud = MultiDependencyHead(hidden_size, n_rels_eud)
+        self.dependency_head_ud = DependencyHead(hidden_size, n_rels_ud) if n_rels_ud > 0 else None
+        self.dependency_head_eud = MultiDependencyHead(hidden_size, n_rels_eud) if n_rels_eud > 0 else None
 
     def forward(
         self,
@@ -276,30 +276,34 @@ class DependencyClassifier(nn.Module):
         h_rel_head = self.rel_head_mlp(embeddings)
         h_rel_dep = self.rel_dep_mlp(embeddings)
 
-        # Share the h vectors between dependency and multi-dependency heads.
-        output_ud = self.dependency_head_ud(
-            h_arc_head,
-            h_arc_dep,
-            h_rel_head,
-            h_rel_dep,
-            gold_arcs=gold_ud,
-            null_mask=null_mask,
-            padding_mask=padding_mask
-        )
-        output_eud = self.dependency_head_eud(
-            h_arc_head,
-            h_arc_dep,
-            h_rel_head,
-            h_rel_dep,
-            gold_arcs=gold_eud,
-            # Ignore null mask in E-UD
-            null_mask=torch.ones_like(padding_mask),
-            padding_mask=padding_mask
-        )
+        result = {}
 
-        return {
-            'preds_ud': output_ud["preds"],
-            'preds_eud': output_eud["preds"],
-            'loss_ud': output_ud["loss"],
-            'loss_eud': output_eud["loss"]
-        }
+        # Share the h vectors between dependency and multi-dependency heads.
+        if self.dependency_head_ud is not None:
+            output_ud = self.dependency_head_ud(
+                h_arc_head,
+                h_arc_dep,
+                h_rel_head,
+                h_rel_dep,
+                gold_arcs=gold_ud,
+                null_mask=null_mask,
+                padding_mask=padding_mask
+            )
+            result['preds_ud'] = output_ud["preds"]
+            result['loss_ud'] = output_ud["loss"]
+
+        if self.dependency_head_eud is not None:
+            output_eud = self.dependency_head_eud(
+                h_arc_head,
+                h_arc_dep,
+                h_rel_head,
+                h_rel_dep,
+                gold_arcs=gold_eud,
+                # Ignore null mask in E-UD
+                null_mask=torch.ones_like(padding_mask),
+                padding_mask=padding_mask
+            )
+            result['preds_eud'] = output_eud["preds"]
+            result['loss_eud'] = output_eud["loss"]
+
+        return result

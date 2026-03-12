@@ -1,6 +1,8 @@
+import json
+import os
 from collections import defaultdict
 
-from datasets import load_dataset, concatenate_datasets
+from datasets import load_dataset, concatenate_datasets, Dataset, DatasetDict
 from transformers import (
     HfArgumentParser,
     TrainingArguments
@@ -28,6 +30,82 @@ from src.processing import (
 from src.callbacks import GradualUnfreezeCallback
 from src.trainer import CustomTrainer
 from src.metrics import compute_metrics
+
+# Standard CoNLL-U columns (by index).
+CONLLU_COLUMNS = ["id", "word", "lemma", "upos", "xpos", "feats", "head", "deprel", "deps", "misc"]
+# Optional extra columns used by CoBaLD.
+CONLLU_EXTRA_COLUMNS = ["deepslot", "semclass"]
+
+
+def parse_conllu(filepath: str) -> Dataset:
+    """Parse a CoNLL-U file into a HuggingFace Dataset (one row per sentence)."""
+    sentences = []
+    current = None
+
+    with open(filepath, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.rstrip("\n")
+            if line.startswith("# sent_id"):
+                current = {"sent_id": line.split("=", 1)[1].strip()}
+            elif line.startswith("# text"):
+                if current is None:
+                    current = {}
+                current["text"] = line.split("=", 1)[1].strip()
+            elif line.startswith("#"):
+                continue
+            elif line == "":
+                if current is not None:
+                    sentences.append(current)
+                    current = None
+            else:
+                if current is None:
+                    current = {}
+                fields = line.split("\t")
+                columns = CONLLU_COLUMNS + CONLLU_EXTRA_COLUMNS[:max(0, len(fields) - len(CONLLU_COLUMNS))]
+                # Columns where "_" means missing value (not literal underscore).
+                nullable_columns = {"lemma", "upos", "xpos", "feats", "head", "deprel", "deps", "misc", "deepslot", "semclass"}
+                for col, val in zip(columns, fields):
+                    current.setdefault(col, [])
+                    if val == "_" and col in nullable_columns:
+                        current[col].append(None)
+                    elif col == "head" and val != "_":
+                        current[col].append(int(val))
+                    elif col == "deps" and val != "_":
+                        # Convert "head1:deprel1|head2:deprel2" to JSON string.
+                        pairs = {}
+                        for pair in val.split("|"):
+                            h, d = pair.split(":", 1)
+                            pairs[h] = d
+                        current[col].append(json.dumps(pairs))
+                    else:
+                        current[col].append(val)
+
+    if current is not None:
+        sentences.append(current)
+
+    # Collect all column names across sentences.
+    all_columns = dict.fromkeys(
+        col for sent in sentences for col in sent if col not in ("sent_id", "text")
+    )
+    # Ensure every sentence has all columns.
+    for sent in sentences:
+        for col in all_columns:
+            sent.setdefault(col, [])
+
+    return Dataset.from_list(sentences)
+
+
+def load_conllu_folder(data_dir: str) -> DatasetDict:
+    """Load train.conllu, dev.conllu and test.conllu from a folder."""
+    splits = {}
+    file_to_split = {"train.conllu": "train", "dev.conllu": "validation", "test.conllu": "test"}
+    for filename, split_name in file_to_split.items():
+        path = os.path.join(data_dir, filename)
+        if os.path.exists(path):
+            splits[split_name] = parse_conllu(path)
+    if not splits:
+        raise FileNotFoundError(f"No .conllu files found in {data_dir}")
+    return DatasetDict(splits)
 
 
 def parse_datasets(value: str) -> list[tuple]:
@@ -92,8 +170,10 @@ if __name__ == "__main__":
     # Use HfArgumentParser with the built-in TrainingArguments class
     parser = HfArgumentParser(TrainingArguments)
     parser.add_argument('--model_config', required=True)
-    parser.add_argument('--dataset_path', required=True)
-    parser.add_argument('--dataset_config_name')
+    parser.add_argument(
+        '--data_dir', required=True,
+        help="Path to folder with train.conllu, dev.conllu and test.conllu"
+    )
     parser.add_argument(
         '--external_datasets',
         type=parse_datasets,
@@ -108,20 +188,26 @@ if __name__ == "__main__":
     # Parse command-line arguments.
     training_args, custom_args = parser.parse_args_into_dataclasses()
 
-    target_dataset_dict = load_dataset(
-        custom_args.dataset_path,
-        name=custom_args.dataset_config_name
-    )
+    target_dataset_dict = load_conllu_folder(custom_args.data_dir)
     target_dataset_dict = transform_dataset(target_dataset_dict)
 
-    all_datasets = [(custom_args.dataset_path, custom_args.dataset_config_name)]
-    if custom_args.external_datasets:
-        all_datasets.extend(custom_args.external_datasets)
+    # Build tagsets from the local dataset.
+    allowed_columns = target_dataset_dict['train'].column_names
+    target_all = concatenate_datasets(target_dataset_dict.values())
+    tagsets = defaultdict(set)
+    for column_name in target_all.column_names:
+        if column_name in allowed_columns:
+            tagsets[column_name] |= extract_unique_labels(target_all, column_name)
 
-    tagsets = build_shared_tagsets(
-        all_datasets,
-        allowed_columns=target_dataset_dict['train'].column_names
-    )
+    # Extend tagsets with external HF datasets (if any).
+    if custom_args.external_datasets:
+        external_tagsets = build_shared_tagsets(
+            custom_args.external_datasets,
+            allowed_columns=allowed_columns
+        )
+        for col, labels in external_tagsets.items():
+            tagsets[col] |= labels
+
     schema = build_schema_with_class_labels(tagsets)
 
     # Final processing.
