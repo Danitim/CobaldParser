@@ -176,18 +176,7 @@ class ConlluTokenClassificationPipeline(Pipeline):
 
     @staticmethod
     def _enumerate_words(words: list[str]) -> list[str]:
-        ids = []
-        current_id = 0
-        current_null_count = 0
-        for word in words:
-            if word == "#NULL":
-                current_null_count += 1
-                ids.append(f"{current_id}.{current_null_count}")
-            else:
-                current_id += 1
-                current_null_count = 0
-                ids.append(f"{current_id}")
-        return ids
+        return [f"{i + 1}" for i in range(len(words))]
 
     @staticmethod
     def _format_as_conllu(sentences: list[dict]) -> str:

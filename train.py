@@ -25,7 +25,7 @@ from src.processing import (
     EUD_DEPREL,
     MISC,
     SEMCLASS,
-    DEEPSLOT
+    DEEPSLOT,
 )
 from src.callbacks import GradualUnfreezeCallback
 from src.trainer import CustomTrainer
@@ -136,7 +136,7 @@ def build_shared_tagsets(datasets_configs: list[tuple], allowed_columns: set = N
 
 def update_vocabulary(config, features):
     for column in [LEMMA_RULE, JOINT_FEATS, UD_DEPREL, EUD_DEPREL, MISC, DEEPSLOT, SEMCLASS]:
-        if column in features:
+        if column in features and hasattr(features[column], 'feature') and hasattr(features[column].feature, 'names'):
             labels = features[column].feature.names
             config.vocabulary[column] = dict(enumerate(labels))
 
@@ -238,7 +238,7 @@ if __name__ == "__main__":
 
     # Manually set some parameters for this specific workflow to work.
     training_args.remove_unused_columns = False
-    training_args.label_names = ["counting_masks"]
+    training_args.label_names = []
     for dataset_column, parser_input in (
         (LEMMA_RULE, "lemma_rules"),
         (JOINT_FEATS, "joint_feats"),

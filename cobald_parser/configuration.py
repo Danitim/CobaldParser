@@ -7,7 +7,7 @@ class CobaldParserConfig(PretrainedConfig):
     def __init__(
         self,
         encoder_model_name: str = None,
-        null_classifier_hidden_size: int = 0,
+        ellipsis_mask_token: str = "[MASK]",
         lemma_classifier_hidden_size: int = 0,
         morphology_classifier_hidden_size: int = 0,
         dependency_classifier_hidden_size: int = 0,
@@ -16,13 +16,11 @@ class CobaldParserConfig(PretrainedConfig):
         semclass_classifier_hidden_size: int = 0,
         activation: str = 'relu',
         dropout: float = 0.1,
-        consecutive_null_limit: int = 0,
         vocabulary: dict[dict[int, str]] = {},
         **kwargs
     ):
         self.encoder_model_name = encoder_model_name
-        self.null_classifier_hidden_size = null_classifier_hidden_size
-        self.consecutive_null_limit = consecutive_null_limit
+        self.ellipsis_mask_token = ellipsis_mask_token
         self.lemma_classifier_hidden_size = lemma_classifier_hidden_size
         self.morphology_classifier_hidden_size = morphology_classifier_hidden_size
         self.dependency_classifier_hidden_size = dependency_classifier_hidden_size

@@ -1,7 +1,6 @@
 import json
 import itertools
 
-import numpy as np
 import torch
 from torch import LongTensor
 from datasets import (
@@ -18,7 +17,6 @@ from cobald_parser.utils import pad_sequences
 
 
 ROOT_HEAD = '0'
-NULL = "#NULL"
 
 # Sentence metadata
 SENT_ID = "sent_id"
@@ -39,7 +37,6 @@ DEEPSLOT = "deepslot"
 SEMCLASS = "semclass"
 
 # Transformed fields
-COUNTING_MASK = "counting_mask"
 LEMMA_RULE = "lemma_rule"
 JOINT_FEATS = "joint_feats"
 UD_ARC_FROM = "ud_arc_from"
@@ -67,22 +64,6 @@ def remove_range_tokens(sentence: dict) -> dict:
     }
 
 
-def build_counting_mask(words: list[str]) -> np.array:
-    """
-    Count the number of nulls following each non-null token for a bunch of sentences.
-    `counting_mask[i] = N` means i-th non-null token is followed by N nulls.
-    
-    FIXME: move to tests
-    >>> words = ["#NULL", 'Quick', "#NULL", "#NULL", 'brown', 'fox', "#NULL"]
-    >>> build_counting_mask(words)
-    array([1, 2, 0, 1])
-    """
-    # -1 accounts for leading nulls and len(words) accounts for the trailing nulls.
-    nonnull_words_idxs = [-1] + [i for i, word in enumerate(words) if word != NULL] + [len(words)]
-    counting_mask = np.diff(nonnull_words_idxs) - 1
-    return counting_mask
-
-
 def transform_fields(sentence: dict) -> dict:
     """
     Transform sentence fields:
@@ -92,8 +73,6 @@ def transform_fields(sentence: dict) -> dict:
      * same for e-ud syntax.
     """
     result = {}
-
-    result[COUNTING_MASK] = build_counting_mask(sentence[WORD])
 
     if LEMMA in sentence:
         result[LEMMA_RULE] = [
@@ -195,9 +174,6 @@ def build_schema_with_class_labels(tagsets: dict[str, set]) -> Features:
         WORD: Sequence(Value("string"))
     })
 
-    max_null_count = max(tagsets[COUNTING_MASK])
-    features[COUNTING_MASK] = Sequence(ClassLabel(num_classes=max_null_count + 1))
-
     if LEMMA_RULE in tagsets:
         # Sort to ensure consistent ordering of labels
         lemma_rule_tagset = sorted(tagsets[LEMMA_RULE])
@@ -295,9 +271,6 @@ def collate_with_padding(batches: list[dict], padding_value: int = -100) -> dict
         "sent_ids": gather_column(SENT_ID),
         "texts": gather_column(TEXT)
     }
-
-    counting_masks_batched = stack_padded(COUNTING_MASK)
-    result["counting_masks"] = maybe_none(counting_masks_batched)
 
     columns = {column for batch in batches for column in batch}
     if LEMMA_RULE in columns:

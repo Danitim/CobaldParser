@@ -1,3 +1,4 @@
+import torch
 from torch import nn
 from torch import LongTensor
 from transformers import PreTrainedModel
@@ -6,13 +7,30 @@ from .configuration import CobaldParserConfig
 from .encoder import WordTransformerEncoder
 from .mlp_classifier import MlpClassifier
 from .dependency_classifier import DependencyClassifier
-from .utils import (
-    build_padding_mask,
-    build_null_mask,
-    prepend_cls,
-    remove_nulls,
-    add_nulls
-)
+from .utils import build_padding_mask
+
+
+ELLIPSIS_TOKEN = "_"
+
+
+def _build_ellipsis_mask(sentences: list[list[str]], device) -> torch.Tensor:
+    """Build a boolean mask where True = non-ellipsis token, False = ellipsis token."""
+    masks = [
+        torch.tensor(
+            [word is not None and word != ELLIPSIS_TOKEN for word in sentence],
+            dtype=torch.bool, device=device
+        )
+        for sentence in sentences
+    ]
+    return torch.nn.utils.rnn.pad_sequence(masks, padding_value=False, batch_first=True)
+
+
+def _replace_ellipsis(sentences: list[list[str]], mask_token: str) -> list[list[str]]:
+    """Replace ellipsis tokens with the given mask token."""
+    return [
+        [mask_token if (word is None or word == ELLIPSIS_TOKEN) else word for word in sentence]
+        for sentence in sentences
+    ]
 
 
 class CobaldParser(PreTrainedModel):
@@ -29,13 +47,6 @@ class CobaldParser(PreTrainedModel):
         embedding_size = self.encoder.get_embedding_size()
 
         self.classifiers = nn.ModuleDict()
-        self.classifiers["null"] = MlpClassifier(
-            input_size=self.encoder.get_embedding_size(),
-            hidden_size=config.null_classifier_hidden_size,
-            n_classes=config.consecutive_null_limit + 1,
-            activation=config.activation,
-            dropout=config.dropout
-        )
         if "lemma_rule" in config.vocabulary:
             self.classifiers["lemma_rule"] = MlpClassifier(
                 input_size=embedding_size,
@@ -89,7 +100,6 @@ class CobaldParser(PreTrainedModel):
     def forward(
         self,
         words: list[list[str]],
-        counting_masks: LongTensor = None,
         lemma_rules: LongTensor = None,
         joint_feats: LongTensor = None,
         deps_ud: LongTensor = None,
@@ -102,44 +112,36 @@ class CobaldParser(PreTrainedModel):
         inference_mode: bool = False
     ) -> dict:
         output = {}
+        output["words"] = words
 
-        # Extra [CLS] token accounts for the case when #NULL is the first token in a sentence.
-        words_with_cls = prepend_cls(words)
-        words_without_nulls = remove_nulls(words_with_cls)
-        # Embeddings of words without nulls.
-        embeddings_without_nulls = self.encoder(words_without_nulls)
-        # Predict nulls.
-        null_output = self.classifiers["null"](embeddings_without_nulls, counting_masks)
-        output["counting_mask"] = null_output['preds']
-        output["loss"] = null_output["loss"]
+        # Build ellipsis mask: True for real tokens, False for ellipsis.
+        ellipsis_mask = _build_ellipsis_mask(words, self.device)
 
-        # "Teacher forcing": during training, pass the original words (with gold nulls)
-        # to the classification heads, so that they are trained upon correct sentences.
-        if inference_mode:
-            # Restore predicted nulls in the original sentences.
-            output["words"] = add_nulls(words, null_output["preds"])
-        else:
-            output["words"] = words
+        # Replace ellipsis tokens with the encoder's mask token before encoding.
+        words_for_encoder = _replace_ellipsis(words, self.config.ellipsis_mask_token)
 
-        # Encode words with nulls.
+        # Encode all words (ellipsis positions get mask-token embeddings).
         # [batch_size, seq_len, embedding_size]
-        embeddings = self.encoder(output["words"])
+        embeddings = self.encoder(words_for_encoder)
 
-        # Predict lemmas and morphological features.
+        output["loss"] = 0.0
+
+        # Predict lemmas and morphological features (exclude ellipsis from loss).
         if "lemma_rule" in self.classifiers:
-            lemma_output = self.classifiers["lemma_rule"](embeddings, lemma_rules)
+            lemma_output = self.classifiers["lemma_rule"](embeddings, lemma_rules, mask=ellipsis_mask)
             output["lemma_rules"] = lemma_output['preds']
             output["loss"] += lemma_output['loss']
 
         if "joint_feats" in self.classifiers:
-            joint_feats_output = self.classifiers["joint_feats"](embeddings, joint_feats)
+            joint_feats_output = self.classifiers["joint_feats"](embeddings, joint_feats, mask=ellipsis_mask)
             output["joint_feats"] = joint_feats_output['preds']
             output["loss"] += joint_feats_output['loss']
 
-        # Predict syntax.
+        # Predict syntax (ellipsis tokens participate normally).
         if "syntax" in self.classifiers:
-            padding_mask = build_padding_mask(output["words"], self.device)
-            null_mask = build_null_mask(output["words"], self.device)
+            padding_mask = build_padding_mask(words, self.device)
+            # No null masking — all tokens (including ellipsis) participate in syntax.
+            null_mask = torch.ones_like(padding_mask)
             deps_output = self.classifiers["syntax"](
                 embeddings,
                 deps_ud,

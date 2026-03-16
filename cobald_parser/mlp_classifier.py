@@ -31,16 +31,22 @@ class MlpClassifier(nn.Module):
             class_weights = torch.tensor(class_weights, dtype=torch.long)
         self.cross_entropy = nn.CrossEntropyLoss(weight=class_weights)
 
-    def forward(self, embeddings: Tensor, labels: LongTensor = None) -> dict:
+    def forward(self, embeddings: Tensor, labels: LongTensor = None, mask: Tensor = None) -> dict:
         logits = self.classifier(embeddings)
         # Calculate loss.
         loss = 0.0
         if labels is not None:
-            # Reshape tensors to match expected dimensions
-            loss = self.cross_entropy(
-                logits.view(-1, self.n_classes),
-                labels.view(-1)
-            )
+            if mask is not None:
+                # Only compute loss for non-masked positions.
+                flat_logits = logits.view(-1, self.n_classes)
+                flat_labels = labels.view(-1)
+                flat_mask = mask.view(-1).bool()
+                loss = self.cross_entropy(flat_logits[flat_mask], flat_labels[flat_mask])
+            else:
+                loss = self.cross_entropy(
+                    logits.view(-1, self.n_classes),
+                    labels.view(-1)
+                )
         # Predictions.
         preds = logits.argmax(dim=-1)
         return {'preds': preds, 'loss': loss}

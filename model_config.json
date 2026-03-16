@@ -1,11 +1,10 @@
 {
   "encoder_model_name": "distilbert-base-uncased",
-  "null_classifier_hidden_size": 512,
+  "ellipsis_mask_token": "[MASK]",
   "lemma_classifier_hidden_size": 512,
   "morphology_classifier_hidden_size": 512,
   "dependency_classifier_hidden_size": 128,
   "misc_classifier_hidden_size": 512,
   "deepslot_classifier_hidden_size": 256,
-  "semclass_classifier_hidden_size": 512,
-  "consecutive_null_limit": 3
+  "semclass_classifier_hidden_size": 512
 }
