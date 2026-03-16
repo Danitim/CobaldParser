@@ -277,5 +277,6 @@ if __name__ == "__main__":
     # Save and push model to hub (if push_to_hub is set).
     trainer.save_model()
 
-    pipe = ConlluTokenClassificationPipeline(model)
-    pipe.push_to_hub(training_args.hub_model_id)
+    if training_args.hub_model_id:
+        pipe = ConlluTokenClassificationPipeline(model)
+        pipe.push_to_hub(training_args.hub_model_id)

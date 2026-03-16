@@ -3,6 +3,7 @@ from typing import override
 from transformers import Pipeline
 
 from src.lemmatize_helper import reconstruct_lemma
+from cobald_parser.modeling_parser import ELLIPSIS_TOKEN
 
 
 class ConlluTokenClassificationPipeline(Pipeline):
@@ -112,21 +113,25 @@ class ConlluTokenClassificationPipeline(Pipeline):
             "ids": ids
         }
 
-        # Decode lemmas.
+        # Build ellipsis flags for this sentence.
+        is_ellipsis = [w is None or w == ELLIPSIS_TOKEN for w in words]
+
+        # Decode lemmas (skip ellipsis).
         if lemma_rule_ids:
             result["lemmas"] = [
-                reconstruct_lemma(
+                "_" if is_ellipsis[i] else reconstruct_lemma(
                     word,
                     self.model.config.vocabulary["lemma_rule"][lemma_rule_id]
                 )
-                for word, lemma_rule_id in zip(words, lemma_rule_ids, strict=True)
+                for i, (word, lemma_rule_id) in enumerate(zip(words, lemma_rule_ids, strict=True))
             ]
-        # Decode POS and features.
+        # Decode POS and features (skip ellipsis).
         if joint_feats_ids:
             upos, xpos, feats = zip(
                 *[
+                    ("_", "_", "_") if is_ellipsis[i] else
                     self.model.config.vocabulary["joint_feats"][joint_feats_id].split('#')
-                    for joint_feats_id in joint_feats_ids
+                    for i, joint_feats_id in enumerate(joint_feats_ids)
                 ],
                 strict=True
             )
