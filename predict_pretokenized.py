@@ -1,6 +1,6 @@
 import argparse
 
-from transformers import pipeline
+from cobald_parser import CobaldParser, ConlluTokenClassificationPipeline
 
 
 def parse_conllu_to_token_lists(filepath):
@@ -77,24 +77,32 @@ if __name__ == "__main__":
     dummy_tokenizer = lambda sentence: sentence.split(token_delimiter)
     dummy_sentenizer = lambda sentence: [sentence]
 
-    pipe = pipeline(
-        "token-classification",
-        model=args.model,
+    from cobald_parser.configuration import CobaldParserConfig
+    from safetensors.torch import load_file
+    import os
+
+    config = CobaldParserConfig.from_pretrained(args.model)
+    model = CobaldParser(config)
+    # Load trained weights.
+    weights_path = os.path.join(args.model, "model.safetensors")
+    state_dict = load_file(weights_path)
+    model.load_state_dict(state_dict, strict=False)
+    model.eval()
+    pipe = ConlluTokenClassificationPipeline(
+        model=model,
         tokenizer=dummy_tokenizer,
-        sentenizer=dummy_sentenizer,
-        trust_remote_code=True
+        sentenizer=dummy_sentenizer
     )
 
-    batch_size = 64
     sentences = []
     for tokens in parse_conllu_to_token_lists(args.input):
         assert token_delimiter not in tokens
         sentences.append(token_delimiter.join(tokens))
 
     outputs = []
-    for i in range(0, len(sentences), batch_size):
-        batch_sentences = sentences[i:i + batch_size]
-        outputs.extend(pipe(batch_sentences, output_format='str', batch_size=batch_size))
+    for sentence in sentences:
+        result = pipe(sentence, output_format='str')
+        outputs.append(result)
 
     with open(args.output, 'w') as f:
         f.write('\n\n'.join(outputs))
