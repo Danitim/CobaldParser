@@ -185,9 +185,10 @@ if __name__ == "__main__":
     )
     parser.add_argument('--finetune_from')
     parser.add_argument(
-        '--columns',
-        nargs='+',
-        help="CoNLL-U columns to keep for training (e.g. upos feats head deprel). "
+        '--conllu_columns',
+        type=str,
+        default=None,
+        help="Comma-separated CoNLL-U columns to keep for training (e.g. upos,feats,head,deprel). "
         "Columns 'id' and 'word' are always kept."
     )
 
@@ -197,8 +198,9 @@ if __name__ == "__main__":
     target_dataset_dict = load_conllu_folder(custom_args.data_dir)
 
     # Remove columns not requested by the user.
-    if custom_args.columns:
-        keep = {"id", "word", "sent_id", "text"} | set(custom_args.columns)
+    if custom_args.conllu_columns:
+        columns_list = [c.strip() for c in custom_args.conllu_columns.split(",")]
+        keep = {"id", "word", "sent_id", "text"} | set(columns_list)
         drop = [c for c in target_dataset_dict["train"].column_names if c not in keep]
         if drop:
             target_dataset_dict = target_dataset_dict.remove_columns(drop)
