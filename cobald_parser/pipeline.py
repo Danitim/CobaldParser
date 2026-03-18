@@ -213,18 +213,18 @@ class ConlluTokenClassificationPipeline(Pipeline):
 
             for idx, token_id in enumerate(sentence['ids']):
                 word = sentence['words'][idx]
-                lemma = sentence['lemmas'][idx] if "lemmas" in sentence else ''
-                upos = sentence['upos'][idx] if "upos" in sentence else ''
-                xpos = sentence['xpos'][idx] if "xpos" in sentence else ''
-                feats = sentence['feats'][idx] if "feats" in sentence else ''
-                deps = '|'.join(f"{head}:{rel}" for head, rel in deps_dicts[idx].items()) or '_'
-                misc = sentence['miscs'][idx] if "miscs" in sentence else ''
-                deepslot = sentence['deepslots'][idx] if "deepslots" in sentence else ''
-                semclass = sentence['semclasses'][idx] if "semclasses" in sentence else ''
-                # CoNLL-U columns
+                lemma = sentence.get('lemmas', ['_'] * len(sentence['ids']))[idx]
+                upos = sentence.get('upos', ['_'] * len(sentence['ids']))[idx]
+                xpos = sentence.get('xpos', ['_'] * len(sentence['ids']))[idx]
+                feats = sentence.get('feats', ['_'] * len(sentence['ids']))[idx]
+                head = heads[idx] or '_'
+                deprel = deprels[idx] or '_'
+                deps = '|'.join(f"{h}:{r}" for h, r in deps_dicts[idx].items()) or '_'
+                misc = sentence.get('miscs', ['_'] * len(sentence['ids']))[idx]
+                # Standard 10-column CoNLL-U format
                 line = '\t'.join([
-                    token_id, word, lemma, upos, xpos, feats, heads[idx],
-                    deprels[idx], deps, misc, deepslot, semclass
+                    token_id, word, lemma, upos, xpos, feats, head,
+                    deprel, deps, misc
                 ])
                 lines.append(line)
             formatted.append('\n'.join(lines))
